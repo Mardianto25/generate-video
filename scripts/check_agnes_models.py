@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 import time
@@ -104,13 +103,13 @@ def main():
     summary = os.getenv("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as summary_file:
-            summary_file.write("### Agnes chat model preflight\\n\\n")
-            summary_file.write("| Model | Probe result |\\n|---|---|\\n")
+            summary_file.write("### Agnes chat model preflight\n\n")
+            summary_file.write("| Model | Probe result |\n|---|---|\n")
             for model_id in ordered:
                 summary_file.write(
-                    f"| {model_id} | {'Available' if model_id in working else 'Unavailable'} |\\n"
+                    f"| {model_id} | {'Available' if model_id in working else 'Unavailable'} |\n"
                 )
-            summary_file.write(f"\\n**Fallback order:** {selected}\\n")
+            summary_file.write(f"\n**Fallback order:** {selected}\n")
 
 
 if __name__ == "__main__":
