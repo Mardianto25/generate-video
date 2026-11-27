@@ -25,7 +25,7 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 - Log engine dan runner ditampilkan langsung di GitHub Actions selama proses berjalan.
 - Log runner mencatat waktu, tahapan, durasi request, status task, heartbeat polling, dan detail error.
 - Jika job gagal, workflow menampilkan 300 baris terakhir dari masing-masing log.
-- Tidak ada retry otomatis untuk request Agnes Chat, konfigurasi scene, upload gambar, submit video, maupun kegagalan polling API. Request yang gagal langsung menghentikan proses terkait agar penyebabnya terlihat jelas.
+- Tidak ada retry otomatis untuk request Agnes Chat/Image/Video, konfigurasi scene, image analysis, end-frame generation, TTS, polling API yang gagal, maupun download media. Kegagalan langsung ditampilkan agar penyebabnya mudah ditelusuri.
 - Rate limiter tetap aktif pada 5 request/menit (efektif sekitar 4 request/menit) dengan burst 1. Rate limiter hanya mengatur jarak antar-request; bukan retry.
 
 ## Catatan penting
