@@ -113,6 +113,86 @@ replace_once(creative_file, "for attempt in range(3):", "for attempt in range(1)
 
 # Agnes video and image APIs: one attempt only. Polling errors fail immediately.
 replace_once(video_file, "max_retries: int = 5", "max_retries: int = 1")
+
+# Replace the upstream retry loop entirely. A failed video submission is logged
+# with its HTTP response body and exits immediately: no 429/5xx/timeout retries,
+# no frame-reduction resubmissions, and no misleading "retry 1/1" message.
+replace_block(
+    video_file,
+    "    async def _submit_with_retry(",
+    "    async def generate_single_video(",
+    """    async def _submit_with_retry(self, payload: dict, mode_desc: str) -> str:
+        \"\"\"Submit once; expose the exact API failure without retrying.\"\"\"
+        if self.shutdown_event and self.shutdown_event.is_set():
+            raise RuntimeError("Video generation cancelled by user")
+
+        logger.info(
+            f"[AgnesVideo] Submitting {mode_desc} (single attempt; retries disabled)"
+        )
+        started = time.monotonic()
+        try:
+            await asyncio.to_thread(get_rate_limiter().acquire)
+            resp = await asyncio.wait_for(
+                asyncio.to_thread(
+                    requests.post,
+                    f"{BASE_URL}/videos",
+                    headers=self.headers,
+                    json=payload,
+                    timeout=(15, 60),
+                ),
+                timeout=90,
+            )
+        except (requests.exceptions.RequestException, asyncio.TimeoutError) as exc:
+            elapsed = time.monotonic() - started
+            logger.exception(
+                f"[AgnesVideo] Submit transport failure after {elapsed:.1f}s "
+                f"({type(exc).__name__}); no retry will be attempted"
+            )
+            raise RuntimeError(
+                f"Agnes video submit transport failure ({type(exc).__name__}); "
+                "request was not retried"
+            ) from exc
+
+        elapsed = time.monotonic() - started
+        response_body = (resp.text or "")[:2000]
+        logger.info(
+            f"[AgnesVideo] POST /videos -> HTTP {resp.status_code} "
+            f"after {elapsed:.1f}s"
+        )
+
+        if resp.status_code != 200:
+            logger.error(
+                f"[AgnesVideo] Video submission rejected: "
+                f"HTTP {resp.status_code}; body={response_body!r}; "
+                "no retry will be attempted"
+            )
+            raise RuntimeError(
+                f"Agnes video submit failed (HTTP {resp.status_code}): "
+                f"{response_body}"
+            )
+
+        try:
+            result = resp.json()
+        except ValueError as exc:
+            logger.error(
+                f"[AgnesVideo] HTTP 200 returned invalid JSON: {response_body!r}"
+            )
+            raise RuntimeError("Agnes video submit returned invalid JSON") from exc
+
+        video_id = result.get("video_id") or result.get("task_id") or result.get("id")
+        if not video_id:
+            logger.error(
+                f"[AgnesVideo] HTTP 200 response has no video/task id: "
+                f"{response_body!r}"
+            )
+            raise RuntimeError(
+                f"Agnes video submit response missing video id: {response_body}"
+            )
+
+        return video_id
+
+"""
+)
 replace_once(
     video_file,
     "async def _upload_image_to_url(self, image_path: str, retries: int = 3)",
