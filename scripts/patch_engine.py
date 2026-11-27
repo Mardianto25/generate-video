@@ -10,6 +10,7 @@ screenwriter_file = ROOT / "core/screenwriter.py"
 tts_file = ROOT / "core/audio/tts.py"
 video_utils_file = ROOT / "utils/video.py"
 image_utils_file = ROOT / "utils/image.py"
+server_file = ROOT / "server.py"
 
 
 def replace_once(path: Path, old: str, new: str):
@@ -25,7 +26,7 @@ def replace_once(path: Path, old: str, new: str):
 
 required_files = (
     chat_file, limiter_file, creative_file, video_file, image_file,
-    screenwriter_file, tts_file, video_utils_file, image_utils_file,
+    screenwriter_file, tts_file, video_utils_file, image_utils_file, server_file,
 )
 for required in required_files:
     if not required.exists():
@@ -122,7 +123,7 @@ replace_once(tts_file, "max_attempts = 2", "max_attempts = 1")
 replace_once(video_utils_file, "@retry(stop=stop_after_attempt(3))\n", "")
 replace_once(image_utils_file, "@retry(stop=stop_after_attempt(3))\n", "")
 
-# Conservative rate limit; this spaces requests but never repeats a failed request.
+# Keep the conservative API rate limit and burst size.
 replace_once(
     limiter_file,
     '_AGNES_RATE_LIMIT = int(os.environ.get("AGNES_RATE_LIMIT", "20"))',
@@ -130,9 +131,77 @@ replace_once(
 )
 replace_once(limiter_file, "max_burst: int = 4", "max_burst: int = 1")
 
+# A creative task has weight 3. The old semaphore capacity at rate limit 5 was
+# 5 // 2 = 2, so acquire() raised ValueError and left the task stuck as queued.
+# Guarantee capacity for at least one task of the heaviest supported type.
+replace_once(
+    server_file,
+    "MAX_CONCURRENT_WEIGHT = _AGNES_RATE_LIMIT // 2  # 默认 10",
+    "MAX_CONCURRENT_WEIGHT = max(_AGNES_RATE_LIMIT // 2, max(TASK_TYPE_WEIGHTS.values()))",
+)
+
+# Mark unexpected queue/worker errors as failed and never release a slot that
+# was not actually acquired (the upstream finally block previously did so).
+replace_once(
+    server_file,
+    """    task_manager.update_state(status=StepStatus.QUEUED)
+
+    try:
+        # 等待并发槽位
+        await _pipeline_semaphore.acquire(weight)
+""",
+    """    task_manager.update_state(status=StepStatus.QUEUED)
+    acquired = False
+
+    try:
+        # 等待并发槽位
+        await _pipeline_semaphore.acquire(weight)
+        acquired = True
+""",
+)
+replace_once(
+    server_file,
+    """    except asyncio.CancelledError:
+        # 任务被取消（如 stop 操作）
+        _queued_tasks.pop(task_id, None)
+        logger.info(f"[Concurrency] Task {task_id} cancelled while queued")
+    finally:
+        # 释放信号量
+        try:
+            await _pipeline_semaphore.release(weight)
+            logger.info(
+                f"[Concurrency] Task {task_id} released slot (weight={weight}, "
+                f"current={_pipeline_semaphore.current}/{_pipeline_semaphore.max_weight})"
+            )
+        except Exception:
+            pass
+        _queued_tasks.pop(task_id, None)
+""",
+    """    except asyncio.CancelledError:
+        # 任务被取消（如 stop 操作）
+        _queued_tasks.pop(task_id, None)
+        logger.info(f"[Concurrency] Task {task_id} cancelled while queued")
+    except Exception as e:
+        _queued_tasks.pop(task_id, None)
+        logger.exception(f"[Concurrency] Task {task_id} failed before/during pipeline execution: {e}")
+        task_manager.update_state(status=StepStatus.FAILED)
+    finally:
+        # Release only when this task actually acquired a semaphore slot.
+        if acquired:
+            try:
+                await _pipeline_semaphore.release(weight)
+                logger.info(
+                    f"[Concurrency] Task {task_id} released slot (weight={weight}, "
+                    f"current={_pipeline_semaphore.current}/{_pipeline_semaphore.max_weight})"
+                )
+            except Exception:
+                logger.exception(f"[Concurrency] Failed to release slot for task {task_id}")
+        _queued_tasks.pop(task_id, None)
+""",
+)
+
 print(
-    "No-retry patch applied across Agnes chat/image/video, scene generation, "
-    "image analysis, TTS, polling failures, and media downloads. "
-    "Request diagnostics enabled.",
+    "No-retry patch applied. Semaphore capacity now supports at least one task "
+    "of the heaviest type; queue exceptions mark tasks failed; slot release is guarded.",
     flush=True,
 )
