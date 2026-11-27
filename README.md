@@ -19,6 +19,12 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 - Mengunduh hasil akhir sebagai `output/generated-video.mp4`.
 - Mengunggah MP4 sebagai artifact dengan retensi 3 hari.
 
+## Penanganan rate limit Agnes
+
+- Workflow menerapkan batas konservatif 5 request/menit (efektif sekitar 4 request/menit) dan menonaktifkan burst request.
+- Jika Agnes mengembalikan HTTP 429, engine mencoba ulang hingga 5 kali dengan jeda 30, 60, 90, dan 120 detik.
+- Pengaturan ini membantu menghadapi rate limit sementara. Jika kuota/kredit akun habis atau batas harian tercapai, retry tidak dapat mengatasinya; periksa kuota dan status akun Agnes.
+
 ## Catatan penting
 
 - Agnes API key wajib tersedia sebagai GitHub Secret. Jangan menaruh API key di prompt, file, atau commit.
@@ -34,5 +40,6 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 ```
 .github/workflows/generate-video.yml  # Manual workflow dispatch
 scripts/run_generator.py             # Submit task, polling, download MP4
+scripts/patch_engine.py              # Conservative Agnes retry/rate-limit settings
 requirements-generator.txt           # Dependensi runner
 ```
