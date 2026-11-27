@@ -59,6 +59,7 @@ jobs:
     timeout-minutes: 350
     env:
       AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
+      AGNES_RATE_LIMIT: "5"
       VIDEO_IDEA: ${{ inputs.idea }}
       VIDEO_STYLE: ${{ inputs.style }}
       SCENE_COUNT: ${{ inputs.scene_count }}
@@ -96,6 +97,9 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/uglylee/free-video-generator.git .engine
           echo "Upstream engine downloaded."
+
+      - name: Apply conservative Agnes rate-limit settings
+        run: python scripts/patch_engine.py
 
       - name: Install engine dependencies
         run: |
