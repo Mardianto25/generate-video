@@ -199,6 +199,26 @@ replace_block(
 
 """
 )
+# Agnes video endpoint rejects explicit width/height fields. Keep the values
+# for local frame-count calculation, but remove them from the HTTP payload.
+replace_once(
+    video_file,
+    """        logger.info(f"[AgnesVideo] {mode_desc}: {prompt[:80]}...")
+
+        video_id = await self._submit_with_retry(payload, mode_desc)
+""",
+    """        for unsupported_field in ("width", "height"):
+            payload.pop(unsupported_field, None)
+        logger.info(
+            "[AgnesVideo] Sanitized request payload; removed unsupported "
+            "width/height fields"
+        )
+        logger.info(f"[AgnesVideo] {mode_desc}: {prompt[:80]}...")
+
+        video_id = await self._submit_with_retry(payload, mode_desc)
+""",
+)
+
 replace_once(
     video_file,
     "async def _upload_image_to_url(self, image_path: str, retries: int = 3)",
