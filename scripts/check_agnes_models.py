@@ -89,7 +89,7 @@ def main():
     github_env = os.getenv("GITHUB_ENV")
     if github_env:
         with open(github_env, "a", encoding="utf-8") as env_file:
-            env_file.write(f"AGNES_VIDEO_MODEL={selected_video_model}\\n")
+            env_file.write(f"AGNES_VIDEO_MODEL={selected_video_model}\n")
     if not ordered:
         raise RuntimeError("No text/chat model candidates found in Agnes model catalog")
 
