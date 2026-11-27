@@ -24,6 +24,16 @@ def replace_once(path: Path, old: str, new: str):
     print(f"Patched {path}: {old.strip()} -> {new.strip()}", flush=True)
 
 
+def replace_block(path: Path, start_marker: str, end_marker: str, replacement: str):
+    source = path.read_text(encoding="utf-8")
+    start = source.find(start_marker)
+    end = source.find(end_marker, start + len(start_marker))
+    if start < 0 or end < 0:
+        raise SystemExit(f"Could not locate patch block in {path}: {start_marker!r}")
+    path.write_text(source[:start] + replacement + source[end:], encoding="utf-8")
+    print(f"Patched model fallback in {path}", flush=True)
+
+
 required_files = (
     chat_file, limiter_file, creative_file, video_file, image_file,
     screenwriter_file, tts_file, video_utils_file, image_utils_file, server_file,
@@ -200,8 +210,17 @@ replace_once(
 """,
 )
 
+# Model fallback: try each configured chat model once, in order. This is not a retry
+# of the same model; it is a failover to a different model, preserving no-retry policy.
+replace_block(
+    chat_file,
+    "    def _request_with_retry(",
+    "    def chat(self,",
+    "    def _request_with_retry(self, payload: dict, timeout: int = 120) -> dict:\n        \"\"\"Try configured chat models in order; one HTTP attempt per model.\"\"\"\n        configured = os.environ.get(\n            \"AGNES_CHAT_MODELS\",\n            \"agnes-3.0-flash,agnes-2.5-flash,agnes-2.0-flash\",\n        )\n        models = [item.strip() for item in configured.split(\",\") if item.strip()]\n        if not models:\n            models = [self.model]\n\n        last_error = None\n        for index, model in enumerate(models, start=1):\n            request_payload = dict(payload)\n            request_payload[\"model\"] = model\n            started = time.monotonic()\n            logger.info(\n                f\"[AgnesChat] Trying model {index}/{len(models)}: {model} \"\n                f\"(single attempt, timeout={timeout}s)\"\n            )\n            try:\n                get_rate_limiter().acquire()\n                resp = requests.post(\n                    f\"{BASE_URL}/chat/completions\",\n                    headers=self.headers,\n                    json=request_payload,\n                    timeout=timeout,\n                )\n                elapsed = time.monotonic() - started\n                logger.info(\n                    f\"[AgnesChat] Model {model} returned HTTP {resp.status_code} \"\n                    f\"after {elapsed:.1f}s\"\n                )\n                resp.raise_for_status()\n                data = resp.json()\n                self.model = model\n                if index > 1:\n                    logger.warning(f\"[AgnesChat] Fallback succeeded; active model is now {model}\")\n                return data\n            except (requests.RequestException, ValueError) as exc:\n                last_error = exc\n                logger.error(\n                    f\"[AgnesChat] Model {model} failed: {type(exc).__name__}: {exc}\"\n                )\n                if index < len(models):\n                    logger.warning(\n                        f\"[AgnesChat] Switching to next model: {models[index]}\"\n                    )\n\n        logger.error(\n            f\"[AgnesChat] All configured models failed: {', '.join(models)}\"\n        )\n        if last_error:\n            raise last_error\n        raise RuntimeError(\"No Agnes chat models are configured\")\n\n"
+)
+
 print(
-    "No-retry patch applied. Semaphore capacity now supports at least one task "
-    "of the heaviest type; queue exceptions mark tasks failed; slot release is guarded.",
+    "No-retry patch applied. Chat model failover enabled; semaphore capacity supports "
+    "the heaviest task; queue exceptions mark tasks failed; slot release is guarded.",
     flush=True,
 )
