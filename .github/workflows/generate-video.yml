@@ -98,8 +98,8 @@ jobs:
           git clone --depth 1 https://github.com/uglylee/free-video-generator.git .engine
           echo "Upstream engine downloaded."
 
-      - name: Apply conservative Agnes rate-limit settings
-        run: python scripts/patch_engine.py
+      - name: Apply no-retry and diagnostic logging patch
+        run: python -u scripts/patch_engine.py
 
       - name: Install engine dependencies
         run: |
@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: |
           cd .engine
-          nohup python -m uvicorn server:app --host 127.0.0.1 --port 8765 > ../engine.log 2>&1 &
+          nohup python -u -m uvicorn server:app --host 127.0.0.1 --port 8765 > ../engine.log 2>&1 &
           echo $! > ../engine.pid
           cd ..
           for i in $(seq 1 60); do
@@ -122,15 +122,41 @@ jobs:
             sleep 2
           done
           echo "::error::Agnes engine failed to start."
-          tail -n 120 engine.log || true
+          tail -n 160 engine.log || true
           exit 1
 
-      - name: Generate video
-        run: python scripts/run_generator.py
+      - name: Generate video (stream engine and runner logs)
+        shell: bash
+        run: |
+          set -o pipefail
+          touch engine.log
+          tail -n 0 -F engine.log &
+          TAIL_PID=$!
+          cleanup() {
+            kill "$TAIL_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          python -u scripts/run_generator.py 2>&1 | tee generator.log
 
-      - name: Show engine log on failure
+      - name: Show diagnostic logs on failure
         if: failure()
-        run: tail -n 200 engine.log || true
+        shell: bash
+        run: |
+          echo "===== RUNNER LOG (last 300 lines) ====="
+          tail -n 300 generator.log 2>/dev/null || true
+          echo "===== ENGINE LOG (last 300 lines) ====="
+          tail -n 300 engine.log 2>/dev/null || true
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generation-diagnostics
+          path: |
+            generator.log
+            engine.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload generated MP4
         if: success()
