@@ -15,6 +15,7 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 
 - Mengunduh engine open-source [uglylee/free-video-generator](https://github.com/uglylee/free-video-generator) saat job berjalan.
 - Menjalankan Python + FFmpeg di GitHub-hosted runner (tanpa GPU lokal).
+- Mengecek daftar model Agnes dan mengetes satu request chat ringan ke setiap kandidat sebelum engine dijalankan. Hanya model yang lolos tes yang dimasukkan ke urutan failover.
 - Memanggil Agnes AI untuk membuat video multi-scene.
 - Mengunduh hasil akhir sebagai `output/generated-video.mp4`.
 - Mengunggah MP4 sebagai artifact dengan retensi 3 hari.
@@ -25,7 +26,7 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 - Log engine dan runner ditampilkan langsung di GitHub Actions selama proses berjalan.
 - Log runner mencatat waktu, tahapan, durasi request, status task, heartbeat polling, dan detail error.
 - Jika job gagal, workflow menampilkan 300 baris terakhir dari masing-masing log.
-- Tidak ada retry otomatis untuk request Agnes Chat/Image/Video, konfigurasi scene, image analysis, end-frame generation, TTS, polling API yang gagal, maupun download media. Kegagalan langsung ditampilkan agar penyebabnya mudah ditelusuri.
+- Tidak ada retry ke model yang sama. Sebelum generate, workflow mengecek GET `/v1/models`, lalu melakukan satu probe chat ke setiap kandidat model teks. Model yang lolos disusun sebagai urutan failover; jika model aktif gagal saat generate, engine berpindah ke model lolos berikutnya tanpa mengulang model sebelumnya. Request Image/Video, konfigurasi scene, image analysis, end-frame generation, TTS, polling API yang gagal, dan download media tetap tidak di-retry.
 - Rate limiter tetap aktif pada 5 request/menit (efektif sekitar 4 request/menit) dengan burst 1. Rate limiter hanya mengatur jarak antar-request; bukan retry.
 - Semaphore engine disesuaikan agar satu task dari tipe terberat tetap dapat berjalan pada rate limit rendah. Error saat masuk antrean sekarang dicatat dan mengubah task menjadi `failed`, bukan tertinggal selamanya sebagai `queued`.
 
@@ -44,6 +45,7 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 ```
 .github/workflows/generate-video.yml  # Manual workflow dispatch
 scripts/run_generator.py             # Submit task, polling, download MP4
-scripts/patch_engine.py              # Disable retries, fix semaphore, add diagnostics
+scripts/patch_engine.py              # Model failover, disable retries, fix semaphore, diagnostics
+scripts/check_agnes_models.py        # Live model catalog and chat probe
 requirements-generator.txt           # Dependensi runner
 ```
