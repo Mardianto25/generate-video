@@ -60,29 +60,36 @@ def main():
     for model_id in available_ids:
         log(f"Catalog model: {model_id}")
 
-    # Catalog inspection is non-billable and does not submit a video job.
-    # The upstream creative pipeline currently defaults to agnes-video-v2.0.
+    # Select a video model actually listed by the live catalog. This is a
+    # catalog check only; we deliberately do not submit a billable test video.
     video_ids = [
         model_id for model_id in available_ids
         if "video" in model_id.lower()
     ]
-    default_video_model = os.getenv("AGNES_VIDEO_MODEL", "agnes-video-v2.0")
-    if video_ids:
-        log(f"Video model(s) listed by catalog: {', '.join(video_ids)}")
-        if default_video_model in video_ids:
-            log(f"VIDEO MODEL CATALOG MATCH: {default_video_model}")
-        else:
-            log(
-                f"WARNING: configured default video model {default_video_model} "
-                f"is not listed in /models; catalog candidates are informational "
-                "and no paid video-generation probe will be submitted"
-            )
-    else:
-        log(
-            "WARNING: /models did not expose any video model IDs. "
-            "Chat availability does not prove video endpoint availability; "
-            "no paid video-generation probe will be submitted."
+    video_preferred_order = [
+        "agnes-video-2.5-flash",
+        "agnes-video-2.5",
+        "agnes-video-v2.0",
+    ]
+    ordered_video = [
+        model_id for model_id in video_preferred_order if model_id in video_ids
+    ]
+    ordered_video.extend(
+        model_id for model_id in video_ids if model_id not in ordered_video
+    )
+    if not ordered_video:
+        raise RuntimeError(
+            "No video model is listed in Agnes /models; refusing to start "
+            "story/image generation with an unverified video model."
         )
+
+    selected_video_model = ordered_video[0]
+    log(f"Video model(s) listed by catalog: {', '.join(video_ids)}")
+    log(f"SELECTED VIDEO MODEL: {selected_video_model} (catalog-listed; endpoint not yet probed)")
+    github_env = os.getenv("GITHUB_ENV")
+    if github_env:
+        with open(github_env, "a", encoding="utf-8") as env_file:
+            env_file.write(f"AGNES_VIDEO_MODEL={selected_video_model}\\n")
     if not ordered:
         raise RuntimeError("No text/chat model candidates found in Agnes model catalog")
 
