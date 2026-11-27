@@ -27,6 +27,7 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 - Jika job gagal, workflow menampilkan 300 baris terakhir dari masing-masing log.
 - Tidak ada retry otomatis untuk request Agnes Chat/Image/Video, konfigurasi scene, image analysis, end-frame generation, TTS, polling API yang gagal, maupun download media. Kegagalan langsung ditampilkan agar penyebabnya mudah ditelusuri.
 - Rate limiter tetap aktif pada 5 request/menit (efektif sekitar 4 request/menit) dengan burst 1. Rate limiter hanya mengatur jarak antar-request; bukan retry.
+- Semaphore engine disesuaikan agar satu task dari tipe terberat tetap dapat berjalan pada rate limit rendah. Error saat masuk antrean sekarang dicatat dan mengubah task menjadi `failed`, bukan tertinggal selamanya sebagai `queued`.
 
 ## Catatan penting
 
@@ -43,6 +44,6 @@ Project terpisah untuk membuat video AI multi-scene menggunakan Agnes AI melalui
 ```
 .github/workflows/generate-video.yml  # Manual workflow dispatch
 scripts/run_generator.py             # Submit task, polling, download MP4
-scripts/patch_engine.py              # Disable retries, add diagnostics, set rate limit
+scripts/patch_engine.py              # Disable retries, fix semaphore, add diagnostics
 requirements-generator.txt           # Dependensi runner
 ```
