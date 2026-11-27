@@ -109,6 +109,12 @@ replace_once(
 
 # Creative pipeline: no retry for scene configuration or end-frame generation.
 replace_once(creative_file, "_MAX_RETRIES = 3", "_MAX_RETRIES = 1")
+# Use the video model selected from the live /models catalog by preflight.
+replace_once(
+    creative_file,
+    'video_model: str = "agnes-video-v2.0"',
+    'video_model: str = os.environ.get("AGNES_VIDEO_MODEL", "agnes-video-2.5-flash")',
+)
 replace_once(creative_file, "for attempt in range(3):", "for attempt in range(1):")
 
 # Agnes video and image APIs: one attempt only. Polling errors fail immediately.
