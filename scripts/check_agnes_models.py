@@ -59,6 +59,30 @@ def main():
     log(f"Catalog contains {len(available_ids)} model(s); {len(ordered)} chat candidate(s)")
     for model_id in available_ids:
         log(f"Catalog model: {model_id}")
+
+    # Catalog inspection is non-billable and does not submit a video job.
+    # The upstream creative pipeline currently defaults to agnes-video-v2.0.
+    video_ids = [
+        model_id for model_id in available_ids
+        if "video" in model_id.lower()
+    ]
+    default_video_model = os.getenv("AGNES_VIDEO_MODEL", "agnes-video-v2.0")
+    if video_ids:
+        log(f"Video model(s) listed by catalog: {', '.join(video_ids)}")
+        if default_video_model in video_ids:
+            log(f"VIDEO MODEL CATALOG MATCH: {default_video_model}")
+        else:
+            log(
+                f"WARNING: configured default video model {default_video_model} "
+                f"is not listed in /models; catalog candidates are informational "
+                "and no paid video-generation probe will be submitted"
+            )
+    else:
+        log(
+            "WARNING: /models did not expose any video model IDs. "
+            "Chat availability does not prove video endpoint availability; "
+            "no paid video-generation probe will be submitted."
+        )
     if not ordered:
         raise RuntimeError("No text/chat model candidates found in Agnes model catalog")
 
